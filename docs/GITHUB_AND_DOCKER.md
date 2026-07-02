@@ -2,7 +2,7 @@
 
 本项目后续采用两条主线：
 
-1. **GitHub API 连接实际项目仓库**：用于读取仓库、创建 Issue、创建分支、创建 PR、评论 Review 结果。
+1. **GitHub API 连接实际项目仓库**：用于读取仓库、读取 `.agents/project.yaml`、创建 Issue、创建分支、创建 PR、评论 Review 结果。
 2. **Docker 沙箱执行命令**：用于在隔离环境中运行测试、lint、构建命令，避免污染主机环境。
 
 ## 1. 为什么用 GitHub API
@@ -12,6 +12,7 @@ GitHub API 适合做正式的多 Agent 协作流程。
 Orchestrator 可以：
 
 - 读取目标仓库信息
+- 读取目标项目 `.agents/project.yaml`
 - 根据 Planner 的任务自动创建 Issues
 - 给 Issue 添加 Agent 标签
 - 后续创建功能分支
@@ -49,7 +50,39 @@ ENABLE_GITHUB_WRITE=true
 - 初期只需要 Issues 写权限
 - 后续需要 PR / Contents 写权限时再扩大
 
-## 3. 生成任务计划
+## 3. 目标项目接入配置
+
+目标项目仓库建议添加：
+
+```text
+.agents/project.yaml
+.agents/roles.md
+.agents/coding-rules.md
+.agents/test-rules.md
+```
+
+可以从本仓库复制模板：
+
+```text
+templates/project-agent-config.yaml
+templates/roles.md
+templates/coding-rules.md
+templates/test-rules.md
+```
+
+从 GitHub 读取目标项目配置：
+
+```bash
+python -m backend.project_cli github oowpc/report-agent
+```
+
+从本地项目目录读取：
+
+```bash
+python -m backend.project_cli local ../report-agent
+```
+
+## 4. 生成任务计划
 
 先生成一个 Plan：
 
@@ -63,7 +96,7 @@ python -m backend.main "给报表 Agent 增加数据质量检查功能" --list-t
 Plan ID：plan_xxx
 ```
 
-## 4. Dry run 检查派单
+## 5. Dry run 检查派单
 
 先不要直接创建 Issue，先 dry run：
 
@@ -73,7 +106,7 @@ python -m backend.github_cli issues oowpc/report-agent plan_xxx --dry-run
 
 它会打印将要创建的 Issues。
 
-## 5. 创建 GitHub Issues
+## 6. 创建 GitHub Issues
 
 确认无误后：
 
@@ -94,13 +127,13 @@ type:test
 status:planned
 ```
 
-## 6. 检查仓库访问
+## 7. 检查仓库访问
 
 ```bash
 python -m backend.github_cli repo oowpc/report-agent
 ```
 
-## 7. Docker 运行 Orchestrator
+## 8. Docker 运行 Orchestrator
 
 构建镜像：
 
@@ -136,7 +169,7 @@ docker run --rm `
   python -m backend.main "给报表 Agent 增加数据质量检查功能" --list-tasks
 ```
 
-## 8. Docker Compose
+## 9. Docker Compose
 
 构建并运行：
 
@@ -156,7 +189,13 @@ docker compose run --rm orchestrator python -m backend.github_cli issues oowpc/r
 docker compose run --rm orchestrator python -m backend.github_cli issues oowpc/report-agent plan_xxx
 ```
 
-## 9. Docker 沙箱设计
+读取目标项目配置：
+
+```bash
+docker compose run --rm orchestrator python -m backend.project_cli github oowpc/report-agent
+```
+
+## 10. Docker 沙箱设计
 
 后续真正执行代码时，不应该直接在主机运行测试命令，而应该进入隔离容器。
 
@@ -188,11 +227,13 @@ Tester Agent 分析日志
 Reviewer Agent 判断是否通过
 ```
 
-## 10. 当前实现边界
+## 11. 当前实现边界
 
 已实现：
 
 - GitHub API service 初版
+- 读取 GitHub 仓库文本文件
+- 读取目标项目 `.agents/project.yaml`
 - 从 SQLite Plan 任务创建 GitHub Issues
 - Dry run 派单
 - Dockerfile
@@ -209,6 +250,7 @@ Reviewer Agent 判断是否通过
 
 建议下一步：
 
-1. 先用 GitHub Issues 跑通派单。
-2. 再接入目标项目 `.agents/project.yaml`。
-3. 然后再做 Docker 沙箱测试执行。
+1. 先给目标项目加 `.agents/project.yaml`。
+2. 用 `project_cli` 验证配置可读取。
+3. 用 GitHub Issues 跑通派单。
+4. 然后再做 Docker 沙箱测试执行。
