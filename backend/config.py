@@ -27,6 +27,7 @@ class Settings:
 
     outputs_dir: Path = Path(os.getenv("OUTPUTS_DIR", "outputs"))
     prompts_dir: Path = Path(os.getenv("PROMPTS_DIR", "backend/prompts"))
+    database_path: Path = Path(os.getenv("DATABASE_PATH", "storage/agent_orchestrator.sqlite3"))
 
     enable_code_execution: bool = os.getenv("ENABLE_CODE_EXECUTION", "false").lower() == "true"
     enable_github_write: bool = os.getenv("ENABLE_GITHUB_WRITE", "false").lower() == "true"
