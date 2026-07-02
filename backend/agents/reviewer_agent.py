@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from backend.models import Task
+from backend.models import EvidencePackage, Task
 
 
 @dataclass
@@ -26,10 +26,11 @@ class ReviewResult:
 
 
 class ReviewerAgent:
-    """Review a planned task before execution.
+    """Review task packages and evidence packages.
 
     This is intentionally conservative: it checks whether a task has enough
-    information to be safely assigned to a Worker Agent.
+    information to be safely assigned to a Worker Agent, and whether a Worker
+    submitted enough evidence to support a status change.
     """
 
     def review_task_plan(self, task: Task) -> ReviewResult:
@@ -44,12 +45,48 @@ class ReviewerAgent:
                 )
             )
 
+        if not task.goal.strip():
+            issues.append(
+                ReviewIssue(
+                    severity="high",
+                    message="任务缺少明确目标。",
+                    suggestion="补充 goal 字段，说明这个任务要达成什么。",
+                )
+            )
+
+        if not task.boundary.strip():
+            issues.append(
+                ReviewIssue(
+                    severity="medium",
+                    message="任务缺少边界说明。",
+                    suggestion="补充 boundary 字段，说明不做什么，避免 Agent 扩散修改。",
+                )
+            )
+
         if not task.acceptance_criteria:
             issues.append(
                 ReviewIssue(
                     severity="high",
                     message="任务缺少验收标准。",
                     suggestion="为任务添加可检查的验收标准。",
+                )
+            )
+
+        if not task.evidence_requirements:
+            issues.append(
+                ReviewIssue(
+                    severity="high",
+                    message="任务缺少证据要求。",
+                    suggestion="补充 evidence_requirements，要求执行 Agent 提供完成内容、证据位置、风险和下一步。",
+                )
+            )
+
+        if not task.blocking_conditions:
+            issues.append(
+                ReviewIssue(
+                    severity="medium",
+                    message="任务缺少阻塞条件。",
+                    suggestion="补充 blocking_conditions，说明什么情况下必须停止并上报。",
                 )
             )
 
@@ -63,5 +100,39 @@ class ReviewerAgent:
             )
 
         passed = not any(issue.severity == "high" for issue in issues)
-        summary = "任务计划可执行。" if passed else "任务计划需要补充信息后再执行。"
+        summary = "任务包可执行。" if passed else "任务包需要补充信息后再执行。"
+        return ReviewResult(passed=passed, issues=issues, summary=summary)
+
+    def review_evidence_package(self, evidence: EvidencePackage) -> ReviewResult:
+        issues: list[ReviewIssue] = []
+
+        if not evidence.completed_work.strip():
+            issues.append(
+                ReviewIssue(
+                    severity="high",
+                    message="证据包缺少完成内容。",
+                    suggestion="补充 completed_work，说明实际完成了什么。",
+                )
+            )
+
+        if not evidence.evidence_locations and not evidence.changed_files and not evidence.commands_run:
+            issues.append(
+                ReviewIssue(
+                    severity="high",
+                    message="证据包缺少可核查证据。",
+                    suggestion="至少提供证据位置、修改文件或运行命令之一。",
+                )
+            )
+
+        if not evidence.suggested_next_steps:
+            issues.append(
+                ReviewIssue(
+                    severity="medium",
+                    message="证据包缺少建议下一步。",
+                    suggestion="补充 suggested_next_steps，方便 Orchestrator 更新状态表。",
+                )
+            )
+
+        passed = not any(issue.severity == "high" for issue in issues)
+        summary = "证据包可用于状态更新。" if passed else "证据包不足，不能支持状态变更。"
         return ReviewResult(passed=passed, issues=issues, summary=summary)
