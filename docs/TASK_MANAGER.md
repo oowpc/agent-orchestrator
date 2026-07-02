@@ -66,19 +66,6 @@ DATABASE_PATH=storage/agent_orchestrator.sqlite3
 - created_at
 - updated_at
 
-### task_events
-
-保存任务事件日志。
-
-字段包括：
-
-- id
-- task_db_id
-- event_type
-- message
-- payload_json
-- created_at
-
 ### evidence_packages
 
 保存子 Agent 提交的证据包。
@@ -111,53 +98,9 @@ DATABASE_PATH=storage/agent_orchestrator.sqlite3
 - evidence_package_id
 - created_at
 
-### conflicts
+### conflicts / decisions / agent_runs / task_events
 
-保存冲突升级记录。
-
-字段包括：
-
-- id
-- task_db_id
-- conflict_type
-- agents_involved_json
-- claims_json
-- evidence_refs_json
-- decision_owner
-- status
-- final_decision
-- created_at
-- updated_at
-
-### decisions
-
-保存最终决策。
-
-字段包括：
-
-- id
-- conflict_id
-- decision_owner
-- decision
-- rationale
-- evidence_refs_json
-- created_at
-
-### agent_runs
-
-保存 Agent 运行记录。
-
-字段包括：
-
-- id
-- task_db_id
-- agent_name
-- input_json
-- output_json
-- status
-- token_usage
-- started_at
-- finished_at
+分别保存冲突升级、最终决策、Agent 运行记录和任务事件日志。
 
 ## 3. 任务状态
 
@@ -172,6 +115,26 @@ needs_fix    需要返工
 done         完成
 failed       失败
 blocked      被阻塞
+```
+
+`done` 是受保护状态。默认情况下，任务必须同时满足：
+
+1. 至少有一个证据包。
+2. 至少有一个通过的 ReviewRecord。
+3. 没有 open / escalated 冲突。
+
+否则不能直接标记为 `done`。
+
+检查是否可以 done：
+
+```bash
+python -m backend.tasks_cli can-done task_xxx
+```
+
+强制标记 done 只应在人工确认后使用：
+
+```bash
+python -m backend.tasks_cli status task_xxx done --force --message "人工确认通过"
 ```
 
 ## 4. 生成计划并写入数据库
@@ -230,12 +193,6 @@ python -m backend.tasks_cli ready plan_xxx
 python -m backend.tasks_cli status task_xxx running --message "开始执行"
 ```
 
-完成任务：
-
-```bash
-python -m backend.tasks_cli status task_xxx done --message "已完成并通过人工检查"
-```
-
 标记需要返工：
 
 ```bash
@@ -267,7 +224,28 @@ python -m backend.evidence_cli submit task_xxx \
 python -m backend.evidence_cli list --task task_xxx
 ```
 
-## 9. 冲突升级和决策
+## 9. 审查证据包
+
+审查一个证据包并写入 ReviewRecord：
+
+```bash
+python -m backend.review_cli evidence evidence_xxx
+```
+
+审查后自动更新状态：
+
+```bash
+python -m backend.review_cli evidence evidence_xxx --apply
+```
+
+默认规则：
+
+- 审查通过：尝试更新为 `done`。
+- 审查失败：更新为 `needs_fix`。
+
+如果存在未解决冲突，即使审查通过，也不能自动进入 `done`。
+
+## 10. 冲突升级和决策
 
 创建冲突记录：
 
@@ -290,9 +268,9 @@ python -m backend.evidence_cli decide conflict_xxx \
   --evidence-ref evidence_xxx
 ```
 
-## 10. 当前限制
+## 11. 当前限制
 
-当前已经具备可信状态的基础数据结构，但还没有实现：
+当前已经具备可信状态的基础数据结构和第一版状态保护，但还没有实现：
 
 - 自动执行任务
 - 自动改代码
