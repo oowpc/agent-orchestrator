@@ -1,0 +1,22 @@
+services:
+  orchestrator:
+    build: .
+    container_name: agent-orchestrator
+    env_file:
+      - .env
+    volumes:
+      - ./storage:/app/storage
+      - ./outputs:/app/outputs
+    command: ["python", "-m", "backend.main", "--help"]
+
+  # Future sandbox service placeholder.
+  # The first production version should run target-project commands in a separate,
+  # restricted container with CPU, memory, network, and volume limits.
+  sandbox:
+    image: python:3.11-slim
+    container_name: agent-orchestrator-sandbox
+    working_dir: /workspace
+    network_mode: "none"
+    command: ["python", "--version"]
+    profiles:
+      - sandbox
