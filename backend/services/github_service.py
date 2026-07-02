@@ -1,7 +1,8 @@
 """GitHub REST API service.
 
-This service is intentionally small for the MVP. It focuses on safe operations:
+This service focuses on safe operations first:
 - read repository metadata
+- read target project config files
 - create Issues from planned tasks
 
 Later versions can add branch creation, file updates, draft PRs, and CI status checks.
@@ -9,6 +10,7 @@ Later versions can add branch creation, file updates, draft PRs, and CI status c
 
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 from typing import Any
 
@@ -25,6 +27,14 @@ class GitHubServiceError(RuntimeError):
 class GitHubIssue:
     number: int
     title: str
+    html_url: str
+
+
+@dataclass(frozen=True)
+class GitHubTextFile:
+    path: str
+    sha: str
+    content: str
     html_url: str
 
 
@@ -46,6 +56,31 @@ class GitHubService:
     def get_repo(self, repo_full_name: str) -> dict[str, Any]:
         response = self.session.get(f"{self.api_base_url}/repos/{repo_full_name}", timeout=30)
         return self._handle_response(response)
+
+    def get_text_file(
+        self,
+        repo_full_name: str,
+        path: str,
+        ref: str | None = None,
+    ) -> GitHubTextFile:
+        params = {"ref": ref} if ref else None
+        response = self.session.get(
+            f"{self.api_base_url}/repos/{repo_full_name}/contents/{path}",
+            params=params,
+            timeout=30,
+        )
+        data = self._handle_response(response)
+        if data.get("type") != "file":
+            raise GitHubServiceError(f"GitHub path is not a file: {path}")
+        if data.get("encoding") != "base64":
+            raise GitHubServiceError(f"Unsupported GitHub file encoding: {data.get('encoding')}")
+        raw = base64.b64decode(data.get("content", "")).decode("utf-8")
+        return GitHubTextFile(
+            path=data["path"],
+            sha=data["sha"],
+            content=raw,
+            html_url=data.get("html_url", ""),
+        )
 
     def create_issue(
         self,
