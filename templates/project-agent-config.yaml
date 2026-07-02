@@ -1,0 +1,72 @@
+# Target project configuration template
+# Copy this file to the target project repository as .agents/project.yaml
+
+project:
+  name: example-project
+  type: web-app
+  description: 示例项目，用于接入 Agent Orchestrator
+
+repo:
+  provider: github
+  full_name: oowpc/example-project
+  default_branch: main
+
+tech_stack:
+  frontend: React
+  backend: FastAPI
+  database: SQLite
+  language:
+    - Python
+    - TypeScript
+
+agents:
+  planner: enabled
+  backend_worker: enabled
+  frontend_worker: enabled
+  tester: enabled
+  reviewer: enabled
+  docs: enabled
+  devops: disabled
+
+paths:
+  backend: backend/
+  frontend: frontend/
+  tests: tests/
+  docs: docs/
+
+rules:
+  prefer_pull_request: true
+  allow_direct_commit: false
+  require_user_confirmation_for:
+    - delete_file
+    - database_migration
+    - dependency_change
+    - deploy
+    - merge_pr
+    - large_refactor
+  protected_paths:
+    - .env
+    - .env.*
+    - secrets/
+    - credentials/
+
+commands:
+  install:
+    - pip install -r requirements.txt
+  test:
+    - pytest
+  lint:
+    - ruff check .
+  frontend_test:
+    - npm test
+
+output:
+  report_format: markdown
+  save_reports_to: .agents/reports/
+  create_github_issues: true
+  create_pull_requests: true
+
+notes:
+  - 所有 Agent 输出必须有验收标准。
+  - Worker Agent 不允许修改无关文件。
+  - 任何危险操作都必须等待用户确认。
