@@ -4,7 +4,8 @@ This service focuses on safe operations first:
 - read repository metadata
 - read target project config files
 - create target project config files
-- create Issues from planned tasks
+- create Issues from planned task packages
+- create Issue comments for evidence, review, and conflict records
 
 Later versions can add branch creation, file updates, draft PRs, and CI status checks.
 """
@@ -29,6 +30,13 @@ class GitHubIssue:
     number: int
     title: str
     html_url: str
+
+
+@dataclass(frozen=True)
+class GitHubIssueComment:
+    id: int
+    html_url: str
+    body: str
 
 
 @dataclass(frozen=True)
@@ -145,6 +153,24 @@ class GitHubService:
         data = self._handle_response(response)
         return GitHubIssue(number=data["number"], title=data["title"], html_url=data["html_url"])
 
+    def create_issue_comment(
+        self,
+        repo_full_name: str,
+        issue_number: int,
+        body: str,
+    ) -> GitHubIssueComment:
+        response = self.session.post(
+            f"{self.api_base_url}/repos/{repo_full_name}/issues/{issue_number}/comments",
+            json={"body": body},
+            timeout=30,
+        )
+        data = self._handle_response(response)
+        return GitHubIssueComment(
+            id=int(data["id"]),
+            html_url=data.get("html_url", ""),
+            body=data.get("body", ""),
+        )
+
     def create_issue_from_task(
         self,
         repo_full_name: str,
@@ -179,9 +205,17 @@ def render_task_issue_body(task: Task, plan_id: str | None = None) -> str:
         lines.append(f"Plan ID：`{plan_id}`")
     lines.append("")
 
+    lines.append("## 任务包")
+    lines.append("")
+    lines.append(f"- 目标：{task.goal or task.title}")
+    lines.append(f"- 边界：{task.boundary or '只完成本任务范围内的工作。'}")
+    lines.append(f"- 决策 owner：{task.decision_owner or 'user'}")
+    lines.append(f"- 交付格式：{task.deliverable_format or '证据报告'}")
+    lines.append("")
+
     lines.append("## 指派 Agent")
     lines.append("")
-    lines.append(f"{task.agent}")
+    lines.append(task.agent)
     lines.append("")
 
     lines.append("## 任务类型")
@@ -194,13 +228,19 @@ def render_task_issue_body(task: Task, plan_id: str | None = None) -> str:
     lines.append(task.description)
     lines.append("")
 
+    lines.append("## 输入材料")
+    lines.append("")
+    _append_items_or_none(lines, task.input_materials)
+    lines.append("")
+
+    lines.append("## 工具权限")
+    lines.append("")
+    _append_items_or_none(lines, task.tool_permissions)
+    lines.append("")
+
     lines.append("## 依赖任务")
     lines.append("")
-    if task.dependencies:
-        for dependency in task.dependencies:
-            lines.append(f"- {dependency}")
-    else:
-        lines.append("无")
+    _append_items_or_none(lines, task.dependencies)
     lines.append("")
 
     lines.append("## 验收标准")
@@ -212,22 +252,46 @@ def render_task_issue_body(task: Task, plan_id: str | None = None) -> str:
         lines.append("- [ ] 补充明确验收标准")
     lines.append("")
 
+    lines.append("## 证据要求")
+    lines.append("")
+    if task.evidence_requirements:
+        for requirement in task.evidence_requirements:
+            lines.append(f"- [ ] {requirement}")
+    else:
+        lines.append("- [ ] 说明完成内容、证据位置、风险和下一步")
+    lines.append("")
+
+    lines.append("## 阻塞条件")
+    lines.append("")
+    _append_items_or_none(lines, task.blocking_conditions)
+    lines.append("")
+
     lines.append("## 风险")
     lines.append("")
-    if task.risks:
-        for risk in task.risks:
-            lines.append(f"- {risk}")
-    else:
-        lines.append("暂无")
+    _append_items_or_none(lines, task.risks)
     lines.append("")
 
     lines.append("## 执行约束")
     lines.append("")
-    lines.append("- 不要修改无关文件。")
-    lines.append("- 不要删除文件，除非用户明确确认。")
-    lines.append("- 不要提交密钥、token、`.env` 文件。")
-    lines.append("- 完成后请说明修改文件、测试结果和剩余风险。")
+    lines.append("- 不修改无关文件。")
+    lines.append("- 危险操作必须先获得确认。")
+    lines.append("- 执行 Agent 不修改验收标准。")
+    lines.append("- 审查 Agent 不重写执行方案。")
+    lines.append("- 完成后必须提交证据包。")
+    lines.append("")
+
+    lines.append("## 建议下一步")
+    lines.append("")
+    lines.append(task.next_action or "等待指派 Agent 执行并提交证据包。")
     return "\n".join(lines)
+
+
+def _append_items_or_none(lines: list[str], items: list[str]) -> None:
+    if items:
+        for item in items:
+            lines.append(f"- {item}")
+    else:
+        lines.append("无")
 
 
 def _normalize_label(value: str) -> str:
