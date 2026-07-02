@@ -49,6 +49,7 @@ logs/
 *.sqlite3
 *.db
 storage/
+outputs/
 results/
 artifacts/
 
