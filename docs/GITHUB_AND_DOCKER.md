@@ -98,20 +98,40 @@ Plan ID：plan_xxx
 
 ## 5. Dry run 检查派单
 
-先不要直接创建 Issue，先 dry run：
+普通派单方式：
 
 ```bash
 python -m backend.github_cli issues oowpc/report-agent plan_xxx --dry-run
 ```
 
-它会打印将要创建的 Issues。
+推荐派单方式：读取目标项目 `.agents/project.yaml` 后再派单。
+
+```bash
+python -m backend.github_cli project-issues oowpc/report-agent plan_xxx --dry-run
+```
+
+`project-issues` 会额外读取：
+
+- 项目名称
+- 技术栈
+- 测试命令
+- 需要用户确认的危险操作
+- `repo.full_name`
+
+如果命令中的仓库和配置文件里的 `repo.full_name` 不一致，会提示警告，并以配置文件为准。
 
 ## 6. 创建 GitHub Issues
 
-确认无误后：
+普通方式：
 
 ```bash
 python -m backend.github_cli issues oowpc/report-agent plan_xxx
+```
+
+推荐方式：
+
+```bash
+python -m backend.github_cli project-issues oowpc/report-agent plan_xxx
 ```
 
 系统会把每个任务创建成一个 Issue，并添加标签：
@@ -125,6 +145,7 @@ type:backend
 type:frontend
 type:test
 status:planned
+project:report-agent
 ```
 
 ## 7. 检查仓库访问
@@ -180,13 +201,13 @@ docker compose run --rm orchestrator python -m backend.main "给报表 Agent 增
 派发 Issue：
 
 ```bash
-docker compose run --rm orchestrator python -m backend.github_cli issues oowpc/report-agent plan_xxx --dry-run
+docker compose run --rm orchestrator python -m backend.github_cli project-issues oowpc/report-agent plan_xxx --dry-run
 ```
 
 确认后：
 
 ```bash
-docker compose run --rm orchestrator python -m backend.github_cli issues oowpc/report-agent plan_xxx
+docker compose run --rm orchestrator python -m backend.github_cli project-issues oowpc/report-agent plan_xxx
 ```
 
 读取目标项目配置：
@@ -235,6 +256,7 @@ Reviewer Agent 判断是否通过
 - 读取 GitHub 仓库文本文件
 - 读取目标项目 `.agents/project.yaml`
 - 从 SQLite Plan 任务创建 GitHub Issues
+- 通过 `project-issues` 按目标项目配置派单
 - Dry run 派单
 - Dockerfile
 - docker-compose.yml
@@ -252,5 +274,5 @@ Reviewer Agent 判断是否通过
 
 1. 先给目标项目加 `.agents/project.yaml`。
 2. 用 `project_cli` 验证配置可读取。
-3. 用 GitHub Issues 跑通派单。
+3. 用 `github_cli project-issues` 跑通按项目配置派单。
 4. 然后再做 Docker 沙箱测试执行。
