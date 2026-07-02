@@ -29,6 +29,10 @@ class Settings:
     prompts_dir: Path = Path(os.getenv("PROMPTS_DIR", "backend/prompts"))
     database_path: Path = Path(os.getenv("DATABASE_PATH", "storage/agent_orchestrator.sqlite3"))
 
+    github_token: str = os.getenv("GITHUB_TOKEN", "")
+    github_api_base_url: str = os.getenv("GITHUB_API_BASE_URL", "https://api.github.com")
+    github_default_owner: str = os.getenv("GITHUB_DEFAULT_OWNER", "")
+
     enable_code_execution: bool = os.getenv("ENABLE_CODE_EXECUTION", "false").lower() == "true"
     enable_github_write: bool = os.getenv("ENABLE_GITHUB_WRITE", "false").lower() == "true"
 
