@@ -290,14 +290,26 @@ class TaskManager:
         if clauses:
             query += " WHERE " + " AND ".join(clauses)
         query += " ORDER BY created_at ASC, task_id ASC"
-
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_task_dict(row) for row in rows]
 
-    def update_status(self, task_db_id: str, status: str, message: str = "") -> None:
+    def get_task(self, task_db_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_db_id,)).fetchone()
+        if not row:
+            raise ValueError(f"Task not found: {task_db_id}")
+        return self._row_to_task_dict(row)
+
+    def update_status(self, task_db_id: str, status: str, message: str = "", force: bool = False) -> None:
         if status not in VALID_STATUSES:
             raise ValueError(f"Invalid task status: {status}")
+        if status == "done" and not force:
+            allowed, reasons = self.can_mark_done(task_db_id)
+            if not allowed:
+                details = "; ".join(reasons)
+                raise ValueError(f"Cannot mark task as done without trusted evidence: {details}")
+
         now = _now()
         with self._connect() as conn:
             result = conn.execute(
@@ -311,8 +323,19 @@ class TaskManager:
                 task_db_id,
                 "status_changed",
                 message or f"Status changed to {status}",
-                {"status": status},
+                {"status": status, "force": force},
             )
+
+    def can_mark_done(self, task_db_id: str) -> tuple[bool, list[str]]:
+        reasons: list[str] = []
+        if not self.list_evidence(task_db_id=task_db_id):
+            reasons.append("missing evidence package")
+        passing_reviews = [review for review in self.list_reviews(task_db_id=task_db_id) if review["passed"]]
+        if not passing_reviews:
+            reasons.append("missing passing review")
+        if self.has_open_conflicts(task_db_id):
+            reasons.append("open conflict exists")
+        return len(reasons) == 0, reasons
 
     def update_next_action(self, task_db_id: str, next_action: str) -> None:
         now = _now()
@@ -370,6 +393,13 @@ class TaskManager:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_evidence_dict(row) for row in rows]
 
+    def get_evidence(self, evidence_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM evidence_packages WHERE id = ?", (evidence_id,)).fetchone()
+        if not row:
+            raise ValueError(f"Evidence package not found: {evidence_id}")
+        return self._row_to_evidence_dict(row)
+
     def add_review(self, review: ReviewRecord) -> str:
         review_id = f"review_{uuid4().hex[:12]}"
         with self._connect() as conn:
@@ -400,6 +430,23 @@ class TaskManager:
                 {"review_id": review_id, **asdict(review)},
             )
         return review_id
+
+    def list_reviews(self, task_db_id: str | None = None, evidence_package_id: str | None = None) -> list[dict[str, Any]]:
+        query = "SELECT * FROM reviews"
+        clauses: list[str] = []
+        params: list[Any] = []
+        if task_db_id:
+            clauses.append("task_db_id = ?")
+            params.append(task_db_id)
+        if evidence_package_id:
+            clauses.append("evidence_package_id = ?")
+            params.append(evidence_package_id)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY created_at ASC"
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [self._row_to_review_dict(row) for row in rows]
 
     def create_conflict(self, conflict: ConflictRecord) -> str:
         if conflict.status not in VALID_CONFLICT_STATUSES:
@@ -438,6 +485,35 @@ class TaskManager:
                 {"conflict_id": conflict_id, **asdict(conflict)},
             )
         return conflict_id
+
+    def list_conflicts(self, task_db_id: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
+        query = "SELECT * FROM conflicts"
+        clauses: list[str] = []
+        params: list[Any] = []
+        if task_db_id:
+            clauses.append("task_db_id = ?")
+            params.append(task_db_id)
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY created_at ASC"
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [self._row_to_conflict_dict(row) for row in rows]
+
+    def has_open_conflicts(self, task_db_id: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM conflicts
+                WHERE task_db_id = ? AND status IN ('open', 'escalated')
+                """,
+                (task_db_id,),
+            ).fetchone()
+        return int(row["count"]) > 0
 
     def record_decision(self, decision: DecisionRecord) -> str:
         decision_id = f"decision_{uuid4().hex[:12]}"
@@ -548,6 +624,33 @@ class TaskManager:
             "risks": _loads(row["risks_json"]),
             "suggested_next_steps": _loads(row["suggested_next_steps_json"]),
             "created_at": row["created_at"],
+        }
+
+    def _row_to_review_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "task_db_id": row["task_db_id"],
+            "reviewer_agent": row["reviewer_agent"],
+            "passed": bool(row["passed"]),
+            "issues": _loads(row["issues_json"]),
+            "summary": row["summary"],
+            "evidence_package_id": row["evidence_package_id"],
+            "created_at": row["created_at"],
+        }
+
+    def _row_to_conflict_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "task_db_id": row["task_db_id"],
+            "conflict_type": row["conflict_type"],
+            "agents_involved": _loads(row["agents_involved_json"]),
+            "claims": _loads(row["claims_json"]),
+            "evidence_refs": _loads(row["evidence_refs_json"]),
+            "decision_owner": row["decision_owner"],
+            "status": row["status"],
+            "final_decision": row["final_decision"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
         }
 
 
