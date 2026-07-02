@@ -72,7 +72,7 @@ class LLMClient:
       "task_type": "backend",
       "description": "提供命令行入口，接收用户需求并调用 Planner Agent。",
       "acceptance_criteria": [
-        "支持 python -m backend.main \"需求文本\" 调用",
+        "支持 python -m backend.main '需求文本' 调用",
         "无需求输入时给出清晰错误提示",
         "能把生成结果保存到 outputs/plans/"
       ],
