@@ -3,6 +3,7 @@
 This service focuses on safe operations first:
 - read repository metadata
 - read target project config files
+- create target project config files
 - create Issues from planned tasks
 
 Later versions can add branch creation, file updates, draft PRs, and CI status checks.
@@ -35,6 +36,13 @@ class GitHubTextFile:
     path: str
     sha: str
     content: str
+    html_url: str
+
+
+@dataclass(frozen=True)
+class GitHubCreatedFile:
+    path: str
+    commit_sha: str
     html_url: str
 
 
@@ -80,6 +88,43 @@ class GitHubService:
             sha=data["sha"],
             content=raw,
             html_url=data.get("html_url", ""),
+        )
+
+    def text_file_exists(self, repo_full_name: str, path: str, ref: str | None = None) -> bool:
+        try:
+            self.get_text_file(repo_full_name=repo_full_name, path=path, ref=ref)
+            return True
+        except GitHubServiceError as exc:
+            if "GitHub API error 404" in str(exc):
+                return False
+            raise
+
+    def create_text_file(
+        self,
+        repo_full_name: str,
+        path: str,
+        content: str,
+        message: str,
+        branch: str | None = None,
+    ) -> GitHubCreatedFile:
+        payload: dict[str, Any] = {
+            "message": message,
+            "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
+        }
+        if branch:
+            payload["branch"] = branch
+        response = self.session.put(
+            f"{self.api_base_url}/repos/{repo_full_name}/contents/{path}",
+            json=payload,
+            timeout=30,
+        )
+        data = self._handle_response(response)
+        content_data = data.get("content", {}) or {}
+        commit_data = data.get("commit", {}) or {}
+        return GitHubCreatedFile(
+            path=content_data.get("path", path),
+            commit_sha=commit_data.get("sha", ""),
+            html_url=content_data.get("html_url", ""),
         )
 
     def create_issue(
