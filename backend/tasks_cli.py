@@ -29,6 +29,10 @@ def build_parser() -> argparse.ArgumentParser:
     update_parser.add_argument("task_db_id", help="数据库里的任务 ID，例如 task_xxx")
     update_parser.add_argument("status", choices=sorted(VALID_STATUSES), help="新状态")
     update_parser.add_argument("--message", default="", help="状态变更说明")
+    update_parser.add_argument("--force", action="store_true", help="强制更新状态；仅人工确认后使用")
+
+    can_done_parser = subparsers.add_parser("can-done", help="检查任务是否具备 done 的可信条件")
+    can_done_parser.add_argument("task_db_id", help="数据库里的任务 ID，例如 task_xxx")
 
     next_parser = subparsers.add_parser("next", help="更新任务下一步")
     next_parser.add_argument("task_db_id", help="数据库里的任务 ID，例如 task_xxx")
@@ -48,25 +52,42 @@ def main(argv: list[str] | None = None) -> int:
     settings = get_settings()
     manager = TaskManager(settings.database_path)
 
-    if args.command == "list":
-        tasks = manager.list_tasks(plan_id=args.plan_id, status=args.status)
-        _print_task_table(tasks, verbose=args.verbose)
-        return 0
+    try:
+        if args.command == "list":
+            tasks = manager.list_tasks(plan_id=args.plan_id, status=args.status)
+            _print_task_table(tasks, verbose=args.verbose)
+            return 0
 
-    if args.command == "ready":
-        tasks = manager.get_ready_tasks(plan_id=args.plan_id)
-        _print_task_table(tasks, verbose=args.verbose)
-        return 0
+        if args.command == "ready":
+            tasks = manager.get_ready_tasks(plan_id=args.plan_id)
+            _print_task_table(tasks, verbose=args.verbose)
+            return 0
 
-    if args.command == "status":
-        manager.update_status(args.task_db_id, args.status, message=args.message)
-        print(f"任务状态已更新：{args.task_db_id} -> {args.status}")
-        return 0
+        if args.command == "status":
+            manager.update_status(args.task_db_id, args.status, message=args.message, force=args.force)
+            print(f"任务状态已更新：{args.task_db_id} -> {args.status}")
+            if args.force:
+                print("注意：本次使用了 --force，状态可能绕过可信证据检查。")
+            return 0
 
-    if args.command == "next":
-        manager.update_next_action(args.task_db_id, args.next_action)
-        print(f"任务下一步已更新：{args.task_db_id}")
-        return 0
+        if args.command == "can-done":
+            allowed, reasons = manager.can_mark_done(args.task_db_id)
+            if allowed:
+                print("可以标记为 done：证据包、通过审查、冲突状态均满足要求。")
+                return 0
+            print("不能标记为 done：")
+            for reason in reasons:
+                print(f"- {reason}")
+            return 1
+
+        if args.command == "next":
+            manager.update_next_action(args.task_db_id, args.next_action)
+            print(f"任务下一步已更新：{args.task_db_id}")
+            return 0
+
+    except ValueError as exc:
+        print(f"错误：{exc}", file=sys.stderr)
+        return 1
 
     print(f"未知命令：{args.command}", file=sys.stderr)
     return 1
